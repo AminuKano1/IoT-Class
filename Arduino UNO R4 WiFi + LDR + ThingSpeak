@@ -1,0 +1,85 @@
+#include <WiFiS3.h>
+#include <ThingSpeak.h>
+
+// ---------- WiFi Credentials ----------
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASSWORD";
+
+// ---------- ThingSpeak Settings ----------
+unsigned long myChannelNumber = YOUR_CHANNEL_ID;   // e.g. 1234567
+const char* myWriteAPIKey = "YOUR_WRITE_API_KEY";
+
+// ---------- Sensor Pin ----------
+int ldrPin = A0;  // LDR connected to analog pin A0
+int ldrValue = 0;
+
+// ---------- WiFi & ThingSpeak Client ----------
+WiFiClient client;
+int status = WL_IDLE_STATUS;
+const int MAX_WIFI_ATTEMPTS = 10;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  Serial.println("\n--- Arduino UNO R4 WiFi: LDR + ThingSpeak ---");
+
+  // Connect to WiFi
+  connectToWiFi();
+
+  // Initialize ThingSpeak
+  ThingSpeak.begin(client);
+
+  Serial.println("Setup complete. Starting data updates...");
+}
+
+void loop() {
+  // Auto-reconnect WiFi if disconnected
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected! Attempting to reconnect...");
+    connectToWiFi();
+  }
+
+  // Read LDR sensor
+  ldrValue = analogRead(ldrPin);
+
+  // Display reading
+  Serial.print(" LDR Value: ");
+  Serial.println(ldrValue);
+
+  // Send data to ThingSpeak (Field 1)
+  int httpCode = ThingSpeak.writeField(myChannelNumber, 1, ldrValue, myWriteAPIKey);
+
+  if (httpCode == 200) {
+    Serial.println(" Data sent to ThingSpeak successfully!");
+  } else {
+    Serial.print(" Error sending data. HTTP code: ");
+    Serial.println(httpCode);
+  }
+
+  // Wait 20 seconds before next update (ThingSpeak limit: 15s min)
+  delay(20000);
+}
+
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(ssid);
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < MAX_WIFI_ATTEMPTS) {
+    status = WiFi.begin(ssid, password);
+    delay(3000);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n WiFi connected!");
+    Serial.print(" SSID: ");
+    Serial.println(WiFi.SSID());
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n Failed to connect after multiple attempts. Retrying in loop...");
+  }
+}
