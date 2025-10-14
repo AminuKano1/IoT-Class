@@ -1,0 +1,144 @@
+#include <WiFiS3.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// ---------- OLED Display Configuration ----------
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// ---------- WiFi & ThingSpeak Settings ----------
+const char* ssid = "YOUR_SSID";
+const char* pass = "YOUR_PASSWORD";
+String apiKey = "YOUR_WRITE_API_KEY";
+const char* server = "api.thingspeak.com";
+
+// ---------- Sound Sensor Configuration ----------
+const int sampleWindow = 50;  // Sample window width in ms (50 ms = 20 samples/sec)
+unsigned int sample;
+
+// ---------- WiFi Client ----------
+WiFiClient client;
+int status = WL_IDLE_STATUS;
+const int MAX_WIFI_ATTEMPTS = 10;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  Serial.println("\n--- Arduino UNO R4 WiFi: Sound Meter + OLED + ThingSpeak ---");
+
+  // Initialize OLED Display
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(" OLED initialization failed!");
+    while (true);
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.println("Initializing...");
+  display.display();
+
+  // Connect to WiFi
+  connectToWiFi();
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("WiFi Connected!");
+  display.print("IP: ");
+  display.println(WiFi.localIP());
+  display.display();
+
+  Serial.println("Setup complete. Starting measurements...");
+}
+
+void loop() {
+  unsigned long startMillis = millis();
+  unsigned int signalMax = 0;
+  unsigned int signalMin = 1024;
+
+  // Collect sound samples
+  while (millis() - startMillis < sampleWindow) {
+    sample = analogRead(A0);
+    if (sample < 1024) {
+      if (sample > signalMax) signalMax = sample;
+      else if (sample < signalMin) signalMin = sample;
+    }
+  }
+
+  // Compute peak-to-peak amplitude and convert to approximate dB value
+  float peakToPeak = signalMax - signalMin;
+  int db = map(peakToPeak, 20, 900, 50, 90);  // Adjust map range to your mic sensitivity
+
+  // Display result on OLED
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("Loudness: ");
+  display.print(db);
+  display.println(" dB");
+  display.display();
+
+  // Print to Serial
+  Serial.print("🎙 Sound Level: ");
+  Serial.print(db);
+  Serial.println(" dB");
+
+  // Reconnect WiFi if disconnected
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected, reconnecting...");
+    connectToWiFi();
+  }
+
+  // Send data to ThingSpeak
+  if (client.connect(server, 80)) {
+    String postStr = apiKey;
+    postStr += "&field1=";
+    postStr += String(db);
+    postStr += "\r\n";
+
+    client.print("POST /update HTTP/1.1\n");
+    client.print("Host: api.thingspeak.com\n");
+    client.print("Connection: close\n");
+    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
+    client.print("Content-Type: application/x-www-form-urlencoded\n");
+    client.print("Content-Length: ");
+    client.print(postStr.length());
+    client.print("\n\n");
+    client.print(postStr);
+
+    Serial.println(" Data sent to ThingSpeak!");
+  } else {
+    Serial.println("Connection to ThingSpeak failed!");
+  }
+
+  client.stop();
+  delay(20000);  // ThingSpeak free account: 15s minimum interval
+}
+
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(ssid);
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < MAX_WIFI_ATTEMPTS) {
+    status = WiFi.begin(ssid, pass);
+    delay(3000);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n WiFi connected!");
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+    Serial.print(" IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n Failed to connect to WiFi. Will retry in loop...");
+  }
+}
