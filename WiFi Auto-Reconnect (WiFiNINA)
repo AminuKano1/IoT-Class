@@ -1,0 +1,62 @@
+#include <SPI.h>
+#include <WiFiNINA.h>
+
+// Your network credentials
+char ssid[] = "YYYYYYYYYY";   // your network SSID (name)
+char pass[] = "XXXXXXXX";     // your network password
+
+int status = WL_IDLE_STATUS;  // connection status
+
+// Number of connection attempts before giving up temporarily
+const int MAX_ATTEMPTS = 10;
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+
+  Serial.println("Starting WiFi connection...");
+
+  // Try to connect to WiFi
+  connectToWiFi();
+}
+
+void loop() {
+  // Check connection status every 10 seconds
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected! Attempting to reconnect...");
+    connectToWiFi();
+  } else {
+    Serial.print("Connected. IP: ");
+    Serial.println(WiFi.localIP());
+  }
+
+  delay(10000); // Wait 10 seconds before checking again
+}
+
+void connectToWiFi() {
+  int attempts = 0;
+  status = WiFi.status();
+
+  while (status != WL_CONNECTED && attempts < MAX_ATTEMPTS) {
+    Serial.print("Attempt ");
+    Serial.print(attempts + 1);
+    Serial.print(" of ");
+    Serial.println(MAX_ATTEMPTS);
+
+    status = WiFi.begin(ssid, pass);
+
+    // Wait a bit before retrying
+    delay(5000);
+    attempts++;
+  }
+
+  if (status == WL_CONNECTED) {
+    Serial.println("WiFi connected successfully!");
+    Serial.print("SSID: ");
+    Serial.println(ssid);
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("Failed to connect after multiple attempts. Will retry in loop...");
+  }
+}
