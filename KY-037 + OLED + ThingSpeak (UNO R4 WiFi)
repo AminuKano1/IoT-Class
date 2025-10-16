@@ -1,0 +1,113 @@
+#include <WiFiS3.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// ---------- OLED Display Configuration ----------
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// ---------- WiFi & ThingSpeak Settings ----------
+const char* ssid = "YOUR_WIFI_SSID";
+const char* pass = "YOUR_WIFI_PASSWORD";
+String apiKey = "YOUR_THINGSPEAK_WRITE_API_KEY";
+const char* server = "api.thingspeak.com";
+
+// ---------- Microphone Configuration ----------
+const int micAnalogPin = A0;   // KY-037 AO -> A0
+const int micDigitalPin = 2;   // KY-037 DO -> D2
+const int sampleWindow = 50;   // in ms (50ms = 20 samples/sec)
+unsigned int sample;
+
+// ---------- WiFi Client ----------
+WiFiClient client;
+int status = WL_IDLE_STATUS;
+const int MAX_WIFI_ATTEMPTS = 10;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  Serial.println("\n=== Arduino UNO R4 WiFi: Microphone + OLED + ThingSpeak ===");
+
+  // Initialize OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("❌ OLED initialization failed!");
+    while (true);
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.println("Initializing...");
+  display.display();
+
+  // Initialize Pins
+  pinMode(micDigitalPin, INPUT);
+
+  // Connect to WiFi
+  connectToWiFi();
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("WiFi Connected!");
+  display.print("IP: ");
+  display.println(WiFi.localIP());
+  display.display();
+
+  Serial.println("✅ Setup complete. Starting measurements...");
+}
+
+void loop() {
+  unsigned long startMillis = millis();
+  unsigned int signalMax = 0;
+  unsigned int signalMin = 1024;
+
+  // Collect analog samples (sound amplitude)
+  while (millis() - startMillis < sampleWindow) {
+    sample = analogRead(micAnalogPin);
+    if (sample < 1024) {
+      if (sample > signalMax) signalMax = sample;
+      else if (sample < signalMin) signalMin = sample;
+    }
+  }
+
+  // Calculate approximate dB value
+  float peakToPeak = signalMax - signalMin;
+  int db = map(peakToPeak, 10, 900, 40, 90);
+  db = constrain(db, 30, 100);
+
+  // Read digital output (sound trigger)
+  int soundDetected = digitalRead(micDigitalPin);
+
+  // Display on OLED
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.print("Sound Level:");
+  display.setTextSize(2);
+  display.setCursor(10, 25);
+  display.print(db);
+  display.print(" dB");
+  display.setTextSize(1);
+  display.setCursor(0, 55);
+  if (soundDetected == HIGH)
+    display.print("Sound Detected!");
+  else
+    display.print("Quiet...");
+  display.display();
+
+  // Serial Output
+  Serial.print("🎙 Sound Level: ");
+  Serial.print(db);
+  Serial.print(" dB | Trigger: ");
+  Serial.println(soundDetected == HIGH ? "YES" : "NO");
+
+  // Reconnect WiFi if needed
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("🔁 WiFi disconnected, reconnecting...");
+    conn
