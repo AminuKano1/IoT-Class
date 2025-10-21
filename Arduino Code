@@ -1,0 +1,82 @@
+
+#include <WiFiS3.h>
+#include <ThingSpeak.h>
+
+// WiFi credentials
+char ssid[] = "IoTwi-fi"; 
+char pass[] = "gkmrxuW6"; 
+
+// ThingSpeak settings
+unsigned long channelID = YOUR_CHANNEL_ID; // Replace with your channel ID
+const char* writeAPIKey = "YOUR_WRITE_API_KEY"; // Replace with your Write API Key
+WiFiClient client;
+
+// Pin definitions
+#define THERMISTOR_PIN A0
+#define LDR_PIN A1
+#define POT_PIN A2
+#define BUTTON_PIN 2
+#define LED_PIN 8
+#define BUZZER_PIN 6
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // Button with internal pull-up
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  
+  // Connect to WiFi
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print("Connecting to WiFi...");
+    WiFi.begin(ssid, pass);
+    delay(5000);
+  }
+  Serial.println("Connected!");
+  
+  // Initialize ThingSpeak
+  ThingSpeak.begin(client);
+}
+
+void loop() {
+  // Read sensors
+  int thermistorRaw = analogRead(THERMISTOR_PIN);
+  float temperature = (thermistorRaw * 0.48828125) - 50; // Simple approximation; calibrate as needed
+  int lightRaw = analogRead(LDR_PIN);
+  int potRaw = analogRead(POT_PIN);
+  int buttonState = !digitalRead(BUTTON_PIN); // Inverted due to pull-up (1 = pressed)
+
+  // Alert logic: Trigger LED and buzzer if temperature exceeds potentiometer threshold
+  int alertStatus = 0;
+  if (temperature > (potRaw / 40.0)) { // Scale pot (0-1023) to reasonable temp range
+    digitalWrite(LED_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH);
+    alertStatus = 1;
+  } else {
+    digitalWrite(LED_PIN, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
+    alertStatus = 0;
+  }
+
+  // Print to Serial Monitor
+  Serial.print("Temp: "); Serial.print(temperature); Serial.print(" °C, ");
+  Serial.print("Light: "); Serial.print(lightRaw); Serial.print(", ");
+  Serial.print("Pot: "); Serial.print(potRaw); Serial.print(", ");
+  Serial.print("Button: "); Serial.print(buttonState); Serial.print(", ");
+  Serial.print("Alert: "); Serial.println(alertStatus);
+
+  // Send data to ThingSpeak
+  ThingSpeak.setField(1, temperature);
+  ThingSpeak.setField(2, lightRaw);
+  ThingSpeak.setField(3, potRaw);
+  ThingSpeak.setField(4, buttonState);
+  ThingSpeak.setField(5, alertStatus);
+  int response = ThingSpeak.writeFields(channelID, writeAPIKey);
+  
+  if (response == 200) {
+    Serial.println("Data sent to ThingSpeak!");
+  } else {
+    Serial.println("Error sending data: " + String(response));
+  }
+
+  delay(20000); // Wait 20 seconds (ThingSpeak free tier limit)
+}
