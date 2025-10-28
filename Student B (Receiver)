@@ -1,0 +1,48 @@
+#include <SPI.h>
+#include <LoRa.h>
+
+// Pin definitions for RFM9x
+const int csPin = 10;      // Chip select
+const int resetPin = 9;    // Reset
+const int irqPin = 2;      // Interrupt
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial); // Wait for serial connection
+  
+  // Initialize LoRa module
+  Serial.println("Initializing LoRa Receiver...");
+  LoRa.setPins(csPin, resetPin, irqPin);
+  
+  if (!LoRa.begin(868E6)) { // UK frequency: 868 MHz
+    Serial.println("LoRa initialization failed!");
+    Serial.println("Check wiring and antenna!");
+    while (1); // Halt on failure
+  }
+  
+  Serial.println("LoRa Receiver Ready - 868 MHz");
+  Serial.println("Waiting for incoming packets...");
+  Serial.println("=================================");
+}
+
+void loop() {
+  // Check for received packets
+  int packetSize = LoRa.parsePacket();
+  
+  if (packetSize) {
+    // Packet received - read contents
+    String receivedMessage = "";
+    while (LoRa.available()) {
+      receivedMessage += (char)LoRa.read();
+    }
+    
+    // Display packet info
+    Serial.print("Received: ");
+    Serial.print(receivedMessage);
+    Serial.print(" | RSSI: ");
+    Serial.print(LoRa.packetRssi());
+    Serial.print(" dBm | SNR: ");
+    Serial.print(LoRa.packetSnr());
+    Serial.println(" dB");
+  }
+}
