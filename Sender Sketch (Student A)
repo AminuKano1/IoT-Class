@@ -1,0 +1,30 @@
+#include <SPI.h>
+#include <LoRa.h>
+
+const int csPin = 10;
+const int resetPin = 9;
+const int irqPin = 2;
+
+int counter = 0;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  LoRa.setPins(csPin, resetPin, irqPin);
+  if (!LoRa.begin(868E6)) {  // EU868
+    Serial.println("LoRa init failed!");
+    while (1);
+  }
+  Serial.println("LoRa Sender Ready (868 MHz)");
+}
+
+void loop() {
+  LoRa.beginPacket();
+  LoRa.print("Packet #");
+  LoRa.print(counter);
+  LoRa.endPacket();
+  Serial.println("Sent: Packet #" + String(counter));
+  counter++;
+  delay(10000);  // 10 sec → <1% duty cycle
+}
