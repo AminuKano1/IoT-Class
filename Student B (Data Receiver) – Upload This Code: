@@ -1,0 +1,61 @@
+#include <SPI.h>
+#include <LoRa.h>
+
+const byte localAddress = 0xBB; // Student B's address
+
+void setup() {
+  Serial.begin(115200);
+  
+  LoRa.setPins(10, 9, 2);
+  if (!LoRa.begin(868E6)) {
+    Serial.println("LoRa init failed!");
+    while (1);
+  }
+  
+  LoRa.onReceive(onReceive);
+  LoRa.receive();
+  
+  Serial.println("Environmental Data Monitor Ready");
+  Serial.println("Waiting for sensor data...");
+  Serial.println("===============================");
+}
+
+void loop() {
+  // All processing happens in onReceive() callback
+  delay(100);
+}
+
+void onReceive(int packetSize) {
+  if (packetSize < 2) return;
+  
+  byte recipient = LoRa.read();
+  byte sender = LoRa.read();
+  
+  if (recipient != localAddress) return;
+  
+  String sensorData = "";
+  while (LoRa.available()) {
+    sensorData += (char)LoRa.read();
+  }
+  
+  // Parse sensor data (simple string parsing)
+  int tempIndex = sensorData.indexOf("TEMP:") + 5;
+  int humIndex = sensorData.indexOf("HUM:") + 4;
+  int nodeIndex = sensorData.indexOf("NODE:");
+  
+  if (tempIndex != -1 && humIndex != -1) {
+    String tempStr = sensorData.substring(tempIndex, sensorData.indexOf(':', tempIndex));
+    String humStr = sensorData.substring(humIndex, sensorData.indexOf(':', humIndex));
+    String nodeStr = sensorData.substring(nodeIndex + 5);
+    
+    Serial.print("Node: ");
+    Serial.print(nodeStr);
+    Serial.print(" | Temperature: ");
+    Serial.print(tempStr);
+    Serial.print("°C | Humidity: ");
+    Serial.print(humStr);
+    Serial.print("% | RSSI: ");
+    Serial.print(LoRa.packetRssi());
+    Serial.println(" dBm");
+  }
+}
