@@ -1,0 +1,101 @@
+#include <SPI.h>
+#include <LoRa.h>
+
+// Hardware pins
+const int buttonPin = 3;
+const int ledPin = 8;
+
+// Network addresses - CHANGE THESE PER STUDENT!
+const byte localAddress = 0xAA;    // Student A: 0xAA, Student B: 0xBB
+const byte destination = 0xBB;     // Student A: 0xBB, Student B: 0xAA
+
+// Button debouncing
+bool lastButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50;
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Configure pins
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
+  
+  // Initialize LoRa
+  LoRa.setPins(10, 9, 2); // CS, RST, IRQ
+  if (!LoRa.begin(868E6)) {
+    Serial.println("LoRa init failed!");
+    while (1);
+  }
+  
+  LoRa.setTxPower(14);
+  LoRa.onReceive(onReceive);
+  LoRa.receive(); // Enable continuous reception
+  
+  Serial.print("Two-Way Node 0x");
+  Serial.println(localAddress, HEX);
+  Serial.println("Press button to toggle partner's LED");
+  Serial.println("====================================");
+}
+
+void loop() {
+  // Check for button press
+  int reading = digitalRead(buttonPin);
+  
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
+  }
+  
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading == LOW && lastButtonState == HIGH) {
+      sendMessage("TOGGLE");
+      delay(300); // Prevent spamming
+      while (digitalRead(buttonPin) == LOW);
+    }
+  }
+  
+  lastButtonState = reading;
+}
+
+void sendMessage(String message) {
+  LoRa.beginPacket();
+  LoRa.write(destination);  // Destination address
+  LoRa.write(localAddress); // Source address
+  LoRa.print(message);      // Message payload
+  LoRa.endPacket();
+  
+  Serial.print("Sent to 0x");
+  Serial.print(destination, HEX);
+  Serial.print(": ");
+  Serial.println(message);
+}
+
+void onReceive(int packetSize) {
+  if (packetSize < 2) return; // Minimum: dest + source
+  
+  byte recipient = LoRa.read();
+  byte sender = LoRa.read();
+  
+  // Filter packets not addressed to this node
+  if (recipient != localAddress) return;
+  
+  // Read message content
+  String message = "";
+  while (LoRa.available()) {
+    message += (char)LoRa.read();
+  }
+  
+  Serial.print("Received from 0x");
+  Serial.print(sender, HEX);
+  Serial.print(": ");
+  Serial.print(message);
+  Serial.print(" | RSSI: ");
+  Serial.println(LoRa.packetRssi());
+  
+  // Process command
+  if (message == "TOGGLE") {
+    digitalWrite(ledPin, !digitalRead(ledPin));
+    Serial.println(">>> LED State Toggled!");
+  }
+}
