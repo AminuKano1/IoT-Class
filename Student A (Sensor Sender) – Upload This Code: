@@ -1,0 +1,69 @@
+#include <SPI.h>
+#include <LoRa.h>
+#include <DHT.h>
+
+// DHT11 Configuration
+const int dhtPin = 4;
+#define DHTTYPE DHT11
+DHT dht(dhtPin, DHTTYPE);
+
+// LoRa Configuration
+const byte destination = 0xBB; // Send to Student B
+unsigned long lastSendTime = 0;
+const unsigned long sendInterval = 12000; // 12 seconds for duty cycle
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Initialize DHT sensor
+  dht.begin();
+  Serial.println("DHT11 Sensor Initialized");
+  
+  // Initialize LoRa
+  LoRa.setPins(10, 9, 2);
+  if (!LoRa.begin(868E6)) {
+    Serial.println("LoRa init failed!");
+    while (1);
+  }
+  
+  LoRa.setTxPower(14);
+  Serial.println("LoRa DHT Sensor Node Ready");
+  Serial.println("Sending data every 12 seconds");
+  Serial.println("=============================");
+}
+
+void loop() {
+  if (millis() - lastSendTime >= sendInterval) {
+    // Read sensor data
+    float temperature = dht.readTemperature();
+    float humidity = dht.readHumidity();
+    
+    // Validate readings
+    if (!isnan(temperature) && !isnan(humidity)) {
+      // Create JSON-like data string
+      String sensorData = "TEMP:" + String(temperature, 1) + 
+                         ":HUM:" + String(humidity, 1) + 
+                         ":NODE:A";
+      
+      // Send via LoRa
+      LoRa.beginPacket();
+      LoRa.write(destination);    // Destination address
+      LoRa.write(0xAA);           // Source address (Student A)
+      LoRa.print(sensorData);     // Sensor readings
+      LoRa.endPacket();
+      
+      // Serial output
+      Serial.print("Sent: ");
+      Serial.print(sensorData);
+      Serial.print(" | Temp: ");
+      Serial.print(temperature, 1);
+      Serial.print("°C | Hum: ");
+      Serial.print(humidity, 1);
+      Serial.println("%");
+    } else {
+      Serial.println("DHT11 Read Error!");
+    }
+    
+    lastSendTime = millis();
+  }
+}
