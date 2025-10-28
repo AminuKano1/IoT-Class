@@ -1,0 +1,49 @@
+#include <SPI.h>
+#include <LoRa.h>
+
+// Pin definitions for RFM9x
+const int csPin = 10;      // Chip select
+const int resetPin = 9;    // Reset
+const int irqPin = 2;      // Interrupt
+int packetCounter = 0;     // Track sent packets
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial); // Wait for serial connection
+  
+  // Initialize LoRa module
+  Serial.println("Initializing LoRa Sender...");
+  LoRa.setPins(csPin, resetPin, irqPin);
+  
+  if (!LoRa.begin(868E6)) { // UK frequency: 868 MHz
+    Serial.println("LoRa initialization failed!");
+    Serial.println("Check wiring and antenna!");
+    while (1); // Halt on failure
+  }
+  
+  // Configure LoRa settings for UK compliance
+  LoRa.setTxPower(14);     // Max 14 dBm for UK
+  LoRa.setSpreadingFactor(7); // Balance range vs speed
+  LoRa.setSignalBandwidth(125E3); // Standard bandwidth
+  
+  Serial.println("LoRa Sender Ready - 868 MHz");
+  Serial.println("Packets will send every 10 seconds");
+  Serial.println("================================");
+}
+
+void loop() {
+  // Create and send packet
+  LoRa.beginPacket();
+  LoRa.print("Packet #");
+  LoRa.print(packetCounter);
+  LoRa.print(" | Time: ");
+  LoRa.print(millis() / 1000);
+  LoRa.print("s");
+  LoRa.endPacket();
+  
+  Serial.print("Sent: Packet #");
+  Serial.println(packetCounter);
+  
+  packetCounter++;
+  delay(10000); // 10 second delay for UK duty cycle compliance
+}
