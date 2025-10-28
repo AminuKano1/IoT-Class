@@ -1,0 +1,35 @@
+const int buttonPin = 3;
+const int ledPin = 8;
+const byte localAddress = 0xAA;  // Student A
+const byte destination  = 0xBB;  // Student B → swap for B
+
+void setup() {
+  // ... LoRa init at 868E6
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(ledPin, OUTPUT);
+  LoRa.onReceive(onReceive);
+  LoRa.receive();
+}
+
+void loop() {
+  if (digitalRead(buttonPin) == LOW) {
+    LoRa.beginPacket();
+    LoRa.write(destination);
+    LoRa.print("toggle");
+    LoRa.endPacket();
+    delay(1000);
+  }
+}
+
+void onReceive(int packetSize) {
+  if (packetSize == 0) return;
+  byte recipient = LoRa.read();
+  if (recipient != localAddress) return;
+
+  String msg = "";
+  while (LoRa.available()) msg += (char)LoRa.read();
+  if (msg == "toggle") {
+    digitalWrite(ledPin, !digitalRead(ledPin));
+    Serial.println("Toggled by peer");
+  }
+}
