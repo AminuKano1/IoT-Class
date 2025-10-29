@@ -1,0 +1,66 @@
+#include <lmic.h>
+#include <hal/hal.h>
+#include <SPI.h>
+
+// TTN credentials (REPLACE WITH YOURS!)
+static const u1_t PROGMEM APPEUI[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+static const u1_t PROGMEM DEVEUI[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+static const u1_t PROGMEM APPKEY[16] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8); }
+void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8); }
+void os_getDevKey (u1_t* buf) { memcpy_P(buf, APPKEY, 16); }
+
+static uint8_t mydata[] = "Hello, TTN!";
+static osjob_t sendjob;
+
+// Pin mapping for Adafruit RFM9x on Arduino Uno
+const lmic_pinmap lmic_pins = {
+    .nss = 10,
+    .rxtx = LMIC_UNUSED_PIN,
+    .rst = 9,
+    .dio = {2, 6, 7},
+};
+
+void onEvent (ev_t ev) {
+    Serial.print(os_getTime());
+    Serial.print(": ");
+    switch(ev) {
+        case EV_JOINING:
+            Serial.println("Joining TTN...");
+            break;
+        case EV_JOINED:
+            Serial.println("Joined TTN successfully!");
+            LMIC_setLinkCheckMode(0);
+            break;
+        case EV_JOIN_FAILED:
+            Serial.println("TTN join failed");
+            break;
+        case EV_TXCOMPLETE:
+            Serial.println("Message sent to TTN");
+            break;
+    }
+}
+
+void do_send(osjob_t* j){
+    if (LMIC.opmode & OP_TXRXPEND) {
+        Serial.println("OP_TXRXPEND, not sending");
+    } else {
+        LMIC_setTxData2(1, mydata, sizeof(mydata)-1, 0);
+        Serial.println("Packet queued for TTN");
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    Serial.println("LMIC LoRaWAN Node Starting");
+    
+    os_init();
+    LMIC_reset();
+    
+    do_send(&sendjob);
+}
+
+void loop() {
+    os_runloop_once();
+}
