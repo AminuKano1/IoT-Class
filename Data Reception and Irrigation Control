@@ -1,0 +1,36 @@
+#include <SPI.h>
+#include <LoRa.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial BT(6, 7); // RX, TX
+
+void setup() {
+  Serial.begin(9600);
+  BT.begin(9600);
+  LoRa.begin(433E6);
+  pinMode(8, OUTPUT); // Relay
+}
+
+void loop() {
+  if (LoRa.parsePacket()) {
+    String data = LoRa.readString();
+    Serial.println("Received: " + data);
+    BT.println("LoRa Data: " + data);
+
+    int soilIndex = data.indexOf("S:");
+    int commaIndex = data.indexOf(",", soilIndex);
+    int soil = data.substring(soilIndex + 2, commaIndex).toInt();
+
+    if (soil < 400) {
+      digitalWrite(8, HIGH); // Turn on pump
+    } else {
+      digitalWrite(8, LOW); // Turn off pump
+    }
+  }
+
+  if (BT.available()) {
+    char cmd = BT.read();
+    if (cmd == '1') digitalWrite(8, HIGH);
+    if (cmd == '0') digitalWrite(8, LOW);
+  }
+}
