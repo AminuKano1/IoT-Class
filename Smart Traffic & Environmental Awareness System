@@ -1,0 +1,172 @@
+/* Smart Traffic & Environmental Awareness - UNO R4 WiFi
+   Pin mapping (change as needed):
+   RED -> D2, YELLOW -> D3, GREEN -> D4
+   TRIG -> D5, ECHO -> D6
+   PIR -> D7
+   SOUND -> A0, FLAME -> A1
+*/
+
+#include <WiFiS3.h>         // UNO R4 WiFi library
+#include <ThingSpeak.h>
+
+// --------- CONFIG ----------
+const char* WIFI_SSID = "YOUR_WIFI_SSID";
+const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
+
+unsigned long channelID = YOUR_CHANNEL_ID;   // numeric
+const char* writeAPIKey = "YOUR_WRITE_API_KEY";
+// ---------------------------
+
+// Pin defs
+const int PIN_RED = 2;
+const int PIN_YELLOW = 3;
+const int PIN_GREEN = 4;
+const int PIN_TRIG = 5;
+const int PIN_ECHO = 6;
+const int PIN_PIR = 7;
+const int PIN_SOUND = A0;
+const int PIN_FLAME = A1;
+
+WiFiClient client;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial && millis() < 3000); // wait for serial on some hosts
+
+  // Pin modes
+  pinMode(PIN_RED, OUTPUT);
+  pinMode(PIN_YELLOW, OUTPUT);
+  pinMode(PIN_GREEN, OUTPUT);
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+  pinMode(PIN_PIR, INPUT);
+  pinMode(PIN_SOUND, INPUT);
+  pinMode(PIN_FLAME, INPUT);
+
+  // Ensure lights off initially
+  digitalWrite(PIN_RED, LOW);
+  digitalWrite(PIN_YELLOW, LOW);
+  digitalWrite(PIN_GREEN, LOW);
+
+  // Connect WiFi
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  unsigned long wifiStart = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000UL) {
+    delay(500);
+    Serial.print(".");
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected.");
+    Serial.print("IP: "); Serial.println(WiFi.localIP());
+    ThingSpeak.begin(client);
+  } else {
+    Serial.println("\nWiFi connection failed. Will continue offline.");
+  }
+
+  Serial.println("Setup complete.");
+}
+
+long readDistanceCM() {
+  // Trigger pulse
+  digitalWrite(PIN_TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(PIN_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+
+  // Read echo pulse width
+  long duration = pulseIn(PIN_ECHO, HIGH, 30000); // timeout 30 ms
+  if (duration == 0) return 999; // no echo
+  long cm = duration * 0.034 / 2;
+  return cm;
+}
+
+void flashAll(int times, int delayMs) {
+  for (int i=0; i<times; ++i) {
+    digitalWrite(PIN_RED, HIGH);
+    digitalWrite(PIN_YELLOW, HIGH);
+    digitalWrite(PIN_GREEN, HIGH);
+    delay(delayMs);
+    digitalWrite(PIN_RED, LOW);
+    digitalWrite(PIN_YELLOW, LOW);
+    digitalWrite(PIN_GREEN, LOW);
+    delay(delayMs);
+  }
+}
+
+void loop() {
+  // Read sensors
+  long distance = readDistanceCM();
+  int soundRaw = analogRead(PIN_SOUND);   // 0..4095 or 0..1023 depending on ADC
+  int flameRaw = analogRead(PIN_FLAME);
+  int pedestrian = digitalRead(PIN_PIR);  // 1 = movement
+
+  // Normalize thresholds (adjust in calibration step)
+  bool noiseAlert = (soundRaw > 700);    // calibrate
+  bool flameAlert = (flameRaw < 300);    // some flame modules pull low on detection
+
+  // Determine traffic timing based on vehicle presence
+  // If very close (vehicles waiting) -> longer green
+  int greenDuration = 5000; // default 5s
+  if (distance < 20) greenDuration = 12000;   // heavy traffic -> extend green
+  else if (distance < 50) greenDuration = 8000; // moderate
+  else greenDuration = 5000; // low traffic
+
+  // If pedestrian present, ensure a green for pedestrian phase
+  if (pedestrian == HIGH) {
+    Serial.println("Pedestrian detected - will grant pedestrian time.");
+    greenDuration += 3000; // extend slightly to allow crossing
+  }
+
+  // Traffic cycle: GREEN -> YELLOW -> RED
+  digitalWrite(PIN_GREEN, HIGH);
+  digitalWrite(PIN_YELLOW, LOW);
+  digitalWrite(PIN_RED, LOW);
+  Serial.print("GREEN for "); Serial.print(greenDuration); Serial.println(" ms");
+  delay(greenDuration);
+
+  digitalWrite(PIN_GREEN, LOW);
+  digitalWrite(PIN_YELLOW, HIGH);
+  Serial.println("YELLOW 2000ms");
+  delay(2000);
+  digitalWrite(PIN_YELLOW, LOW);
+
+  digitalWrite(PIN_RED, HIGH);
+  Serial.println("RED for greenDuration");
+  delay(greenDuration);
+
+  // After cycle, check alerts
+  bool alarmState = false;
+  if (noiseAlert) {
+    Serial.print("ALERT: Noise spike detected: "); Serial.println(soundRaw);
+    alarmState = true;
+  }
+  if (flameAlert) {
+    Serial.print("ALERT: Flame detected: "); Serial.println(flameRaw);
+    alarmState = true;
+  }
+  if (alarmState) {
+    // local alert flash
+    flashAll(3, 300);
+  }
+
+  // Upload to ThingsSpeak if connected
+  if (WiFi.status() == WL_CONNECTED) {
+    ThingSpeak.setField(1, distance);
+    ThingSpeak.setField(2, soundRaw);
+    ThingSpeak.setField(3, flameRaw);
+    ThingSpeak.setField(4, pedestrian);
+    ThingSpeak.setField(5, alarmState ? 1 : 0);
+
+    int response = ThingSpeak.writeFields(channelID, writeAPIKey);
+    if (response == 200) {
+      Serial.println("ThingSpeak update successful.");
+    } else {
+      Serial.print("ThingSpeak error: "); Serial.println(response);
+    }
+  }
+
+  // Short rest before next loop
+  delay(500);
+}
