@@ -1,0 +1,32 @@
+#include <SPI.h>
+#include <LoRa.h>
+#include <DHT.h>
+#include <Wire.h>
+#include <Adafruit_BMP085.h>
+
+#define DHTPIN 4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+Adafruit_BMP085 bmp;
+
+void setup() {
+  Serial.begin(9600);
+  LoRa.begin(433E6);
+  dht.begin();
+  bmp.begin();
+}
+
+void loop() {
+  float temp = dht.readTemperature();
+  float hum = dht.readHumidity();
+  int soil = analogRead(A0);
+  int rain = analogRead(A1);
+  float pressure = bmp.readPressure();
+
+  String payload = "T:" + String(temp) + ",H:" + String(hum) + ",S:" + String(soil) + ",R:" + String(rain) + ",P:" + String(pressure);
+  LoRa.beginPacket();
+  LoRa.print(payload);
+  LoRa.endPacket();
+  Serial.println("Sent: " + payload);
+  delay(5000);
+}
