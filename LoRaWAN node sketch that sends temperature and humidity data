@@ -1,0 +1,75 @@
+#include <SPI.h>
+#include <Adafruit_RFM9x.h>
+#include "DHT.h"
+
+// --- DHT11 Setup ---
+#define DHTPIN 7
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// --- LoRa RFM9x Setup ---
+#define RFM95_CS 10
+#define RFM95_RST 9
+#define RFM95_INT 2
+#define RF95_FREQ 433.0
+
+Adafruit_RFM9x rf95(RFM95_CS, RFM95_INT);
+
+// --- Node Info ---
+uint8_t nodeID = 0x01;
+
+void setup() {
+  Serial.begin(9600);
+  delay(100);
+  Serial.println("LoRa Sensor Node Starting...");
+
+  // Initialize DHT
+  dht.begin();
+
+  // Initialize LoRa module
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+
+  if (!rf95.init()) {
+    Serial.println("LoRa init failed. Check wiring.");
+    while (1);
+  }
+
+  rf95.setFrequency(RF95_FREQ);
+  rf95.setTxPower(20, false);
+  Serial.println("LoRa initialized.");
+}
+
+void loop() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed to read from DHT!");
+    delay(2000);
+    return;
+  }
+
+  Serial.print("Temp: ");
+  Serial.print(t);
+  Serial.print("°C | Humidity: ");
+  Serial.println(h);
+
+  // --- Pack Data (2 bytes each) ---
+  uint8_t payload[4];
+  payload[0] = (uint8_t)t;      // integer part of temperature
+  payload[1] = (uint8_t)(t * 10) % 10; // decimal
+  payload[2] = (uint8_t)h;
+  payload[3] = (uint8_t)(h * 10) % 10;
+
+  rf95.send(payload, sizeof(payload));
+  rf95.waitPacketSent();
+
+  Serial.println("Data sent via LoRa!");
+  delay(60000);  // send every 60 seconds
+}
