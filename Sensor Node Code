@@ -1,0 +1,136 @@
+#include <SoftwareSerial.h>
+#include <DHT.h>
+
+// Team Configuration - UPDATE THESE!
+const int TEAM_ID = 1;        // Change this for each team (1, 2, 3...)
+const int NODE_ID = 1;        // Sensor node ID
+
+// Pin definitions
+#define DHT_PIN 4
+#define BLUETOOTH_TX 2
+#define BLUETOOTH_RX 3
+
+// Sensor setup
+#define DHT_TYPE DHT11
+DHT dht(DHT_PIN, DHT_TYPE);
+
+// Bluetooth setup
+SoftwareSerial bluetooth(BLUETOOTH_TX, BLUETOOTH_RX); // RX, TX
+
+// Variables
+unsigned long lastReadTime = 0;
+const unsigned long READ_INTERVAL = 10000; // Read every 10 seconds
+
+void setup() {
+  // Start serial monitor
+  Serial.begin(9600);
+  while (!Serial); // Wait for serial connection
+  
+  // Start Bluetooth communication
+  bluetooth.begin(9600);
+  
+  // Initialize DHT sensor
+  dht.begin();
+  
+  Serial.println("=== Environmental Sensor Node ===");
+  Serial.print("Team: "); Serial.println(TEAM_ID);
+  Serial.print("Node: "); Serial.println(NODE_ID);
+  Serial.println("DHT11 sensor initialized");
+  Serial.println("Bluetooth module ready");
+  Serial.println("Waiting for sensor readings...");
+  
+  // Blink LED to indicate ready
+  pinMode(LED_BUILTIN, OUTPUT);
+  blinkLED(3, 200);
+}
+
+void loop() {
+  unsigned long currentTime = millis();
+  
+  // Read sensor at regular intervals
+  if (currentTime - lastReadTime >= READ_INTERVAL) {
+    readAndTransmitData();
+    lastReadTime = currentTime;
+  }
+  
+  // Check for incoming Bluetooth messages
+  if (bluetooth.available()) {
+    String message = bluetooth.readString();
+    message.trim();
+    handleBluetoothMessage(message);
+  }
+  
+  // Small delay to prevent overwhelming the system
+  delay(100);
+}
+
+void readAndTransmitData() {
+  // Read temperature and humidity
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+  
+  // Check if readings are valid
+  if (isnan(temperature) || isnan(humidity)) {
+    Serial.println("❌ Failed to read from DHT sensor!");
+    bluetooth.println("ERROR:Sensor read failed");
+    return;
+  }
+  
+  // Print to serial monitor
+  Serial.print("🌡️ Temperature: "); Serial.print(temperature); Serial.println("°C");
+  Serial.print("💧 Humidity: "); Serial.print(humidity); Serial.println("%");
+  
+  // Create data packet
+  String dataPacket = createDataPacket(temperature, humidity);
+  
+  // Send via Bluetooth
+  bluetooth.println(dataPacket);
+  Serial.println("📤 Data sent via Bluetooth: " + dataPacket);
+  
+  // Visual feedback
+  blinkLED(1, 100);
+}
+
+String createDataPacket(float temp, float humidity) {
+  // Format: TEAM, NODE, TEMP, HUM, TIME
+  String packet = "TEAM";
+  packet += TEAM_ID;
+  packet += ",NODE";
+  packet += NODE_ID;
+  packet += ",TEMP";
+  packet += String(temp, 1); // 1 decimal place
+  packet += ",HUM";
+  packet += String(humidity, 1); // 1 decimal place
+  packet += ",TIME";
+  packet += millis();
+  
+  return packet;
+}
+
+void handleBluetoothMessage(String message) {
+  Serial.println("📨 Received from gateway: " + message);
+  
+  if (message == "STATUS") {
+    bluetooth.println("OK,Team" + String(TEAM_ID) + ",Node" + String(NODE_ID));
+  } else if (message == "READ_NOW") {
+    readAndTransmitData();
+  } else if (message == "RESTART") {
+    bluetooth.println("RESTARTING...");
+    delay(1000);
+    setup();
+  }
+}
+
+void blinkLED(int times, int delayTime) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(delayTime);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(delayTime);
+  }
+}
+
+// Function to manually trigger reading (for testing)
+void manualRead() {
+  readAndTransmitData();
+}
