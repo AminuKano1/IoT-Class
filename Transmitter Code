@@ -1,0 +1,123 @@
+#include <SPI.h>
+#include <LoRa.h>
+
+// Team Configuration - UPDATE THESE!
+const int TEAM_ID = 1;        // Change this for each team (1, 2, 3...)
+const int NODE_ID = 1;        // Transmitter node ID
+
+// Pin definitions
+#define PIR_PIN 3
+#define LORA_CS 10
+#define LORA_RST 9
+#define LORA_IRQ 2
+
+// Variables
+unsigned long lastMotionTime = 0;
+const unsigned long MOTION_COOLDOWN = 30000; // 30 seconds between alerts
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial); // Wait for serial connection
+  
+  Serial.println("=== Motion Detector Transmitter ===");
+  Serial.print("Team: "); Serial.println(TEAM_ID);
+  Serial.print("Node: "); Serial.println(NODE_ID);
+  
+  // Initialize PIR sensor
+  pinMode(PIR_PIN, INPUT);
+  
+  // Initialize LoRa
+  if (!initializeLoRa()) {
+    Serial.println("LoRa initialization failed!");
+    while (true); // Halt if LoRa fails
+  }
+  
+  Serial.println("System ready - waiting for motion...");
+}
+
+bool initializeLoRa() {
+  LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
+  
+  if (!LoRa.begin(915E6)) {
+    return false;
+  }
+  
+  // Configure LoRa parameters
+  LoRa.setTxPower(20);
+  LoRa.setSpreadingFactor(12);
+  LoRa.setSignalBandwidth(125E3);
+  LoRa.setCodingRate4(5);
+  
+  return true;
+}
+
+void loop() {
+  // Check for motion
+  if (digitalRead(PIR_PIN) == HIGH) {
+    handleMotionDetection();
+  }
+  
+  // Add small delay to prevent serial spam
+  delay(100);
+}
+
+void handleMotionDetection() {
+  unsigned long currentTime = millis();
+  
+  // Cooldown check to prevent multiple alerts for same motion
+  if (currentTime - lastMotionTime > MOTION_COOLDOWN) {
+    Serial.println("🚨 MOTION DETECTED! Sending alert...");
+    
+    // Send LoRa alert
+    sendLoRaAlert();
+    
+    // Visual feedback
+    blinkLED(13, 3, 200);
+    
+    lastMotionTime = currentTime;
+    
+    // Wait for PIR to stabilize
+    delay(2000);
+  } else {
+    Serial.println("Motion ignored - within cooldown period");
+  }
+}
+
+void sendLoRaAlert() {
+  String alertData = createAlertPacket();
+  
+  LoRa.beginPacket();
+  LoRa.print(alertData);
+  int result = LoRa.endPacket();
+  
+  if (result == 1) {
+    Serial.println("✅ Alert sent successfully via LoRa");
+    Serial.println("Data: " + alertData);
+  } else {
+    Serial.println("❌ Failed to send alert");
+  }
+}
+
+String createAlertPacket() {
+  // Format: TEAM:NODE:TIME:RSSI
+  String packet = "TEAM";
+  packet += TEAM_ID;
+  packet += ":NODE";
+  packet += NODE_ID;
+  packet += ":";
+  packet += millis();
+  packet += ":";
+  packet += LoRa.rssi();
+  
+  return packet;
+}
+
+void blinkLED(int pin, int times, int delayTime) {
+  pinMode(pin, OUTPUT);
+  for (int i = 0; i < times; i++) {
+    digitalWrite(pin, HIGH);
+    delay(delayTime);
+    digitalWrite(pin, LOW);
+    delay(delayTime);
+  }
+}
