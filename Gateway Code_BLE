@@ -1,0 +1,233 @@
+#include <SoftwareSerial.h>
+#include <WiFiS3.h>
+#include <ThingSpeak.h>
+
+// Team Configuration - UPDATE THESE!
+const int TEAM_ID = 1;  // Must match your sensor node team ID
+
+// WiFi Credentials - GET FROM INSTRUCTOR
+char ssid[] = "CampusWiFi";      // Your WiFi SSID
+char pass[] = "Password123";     // Your WiFi password
+
+// ThingSpeak Configuration - GET FROM INSTRUCTOR
+unsigned long channelID = 123456;        // Your ThingSpeak channel ID
+char* writeAPIKey = "YOUR_API_KEY_HERE"; // Your Write API Key
+
+// Pin definitions
+#define BLUETOOTH_TX 2
+#define BLUETOOTH_RX 3
+
+// Bluetooth setup
+SoftwareSerial bluetooth(BLUETOOTH_TX, BLUETOOTH_RX); // RX, TX
+
+// Variables
+WiFiClient client;
+unsigned long lastUploadTime = 0;
+const unsigned long UPLOAD_INTERVAL = 30000; // Upload every 30 seconds
+
+// Data storage
+float lastTemperature = 0;
+float lastHumidity = 0;
+int dataCount = 0;
+
+void setup() {
+  // Start serial monitor
+  Serial.begin(9600);
+  while (!Serial); // Wait for serial connection
+  
+  // Start Bluetooth communication
+  bluetooth.begin(9600);
+  
+  Serial.println("=== Environmental Gateway ===");
+  Serial.print("Team: "); Serial.println(TEAM_ID);
+  
+  // Initialize components
+  initializeWiFi();
+  initializeThingSpeak();
+  
+  // Test Bluetooth connection
+  testBluetoothConnection();
+  
+  Serial.println("✅ Gateway ready - listening for sensor data...");
+  Serial.println("Available commands: STATUS, READ_NOW, RESTART");
+}
+
+void initializeWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(ssid);
+  
+  WiFi.begin(ssid, pass);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(1000);
+    Serial.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n✅ WiFi connected!");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n❌ WiFi connection failed!");
+  }
+}
+
+void initializeThingSpeak() {
+  ThingSpeak.begin(client);
+  Serial.println("✅ ThingSpeak client initialized");
+}
+
+void testBluetoothConnection() {
+  Serial.println("Testing Bluetooth connection...");
+  bluetooth.println("HELLO from Gateway");
+  delay(1000);
+  
+  if (bluetooth.available()) {
+    String response = bluetooth.readString();
+    Serial.println("Bluetooth response: " + response);
+  } else {
+    Serial.println("⚠️  No Bluetooth response - check pairing");
+  }
+}
+
+void loop() {
+  // Check for incoming Bluetooth data
+  if (bluetooth.available()) {
+    String sensorData = bluetooth.readString();
+    sensorData.trim();
+    processSensorData(sensorData);
+  }
+  
+  // Check for serial monitor commands
+  if (Serial.available()) {
+    String command = Serial.readString();
+    command.trim();
+    handleSerialCommand(command);
+  }
+  
+  // Regular upload to ThingSpeak
+  unsigned long currentTime = millis();
+  if (currentTime - lastUploadTime >= UPLOAD_INTERVAL) {
+    if (dataCount > 0) {
+      uploadToThingSpeak();
+    }
+    lastUploadTime = currentTime;
+  }
+  
+  delay(100);
+}
+
+void processSensorData(String data) {
+  Serial.println("\n=== Sensor Data Received ===");
+  Serial.println("Raw data: " + data);
+  
+  // Check if it's a valid data packet
+  if (data.startsWith("TEAM")) {
+    if (parseSensorData(data)) {
+      Serial.print("🌡️ Temperature: "); Serial.print(lastTemperature); Serial.println("°C");
+      Serial.print("💧 Humidity: "); Serial.print(lastHumidity); Serial.println("%");
+      dataCount++;
+      
+      // Acknowledge receipt
+      bluetooth.println("ACK,Data received");
+    }
+  } else if (data.startsWith("ERROR")) {
+    Serial.println("❌ Sensor error: " + data);
+  } else {
+    Serial.println("Other message: " + data);
+  }
+}
+
+bool parseSensorData(String data) {
+  // Format: TEAMX,NODEY,TEMPZ,HUMW,TIMEV
+  int teamIndex = data.indexOf("TEAM") + 4;
+  int nodeIndex = data.indexOf("NODE") + 4;
+  int tempIndex = data.indexOf("TEMP") + 4;
+  int humIndex = data.indexOf("HUM") + 3;
+  
+  // Extract values
+  int receivedTeam = data.substring(teamIndex, data.indexOf(",", teamIndex)).toInt();
+  
+  // Verify it's from our team
+  if (receivedTeam != TEAM_ID) {
+    Serial.println("⚠️  Data from different team - ignoring");
+    return false;
+  }
+  
+  // Extract temperature and humidity
+  int tempEnd = data.indexOf(",", tempIndex);
+  int humEnd = data.indexOf(",", humIndex);
+  
+  lastTemperature = data.substring(tempIndex, tempEnd).toFloat();
+  lastHumidity = data.substring(humIndex, humEnd).toFloat();
+  
+  return true;
+}
+
+void uploadToThingSpeak() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("❌ Cannot upload - WiFi disconnected");
+    reconnectWiFi();
+    return;
+  }
+  
+  Serial.println("☁️ Uploading to ThingSpeak...");
+  
+  // Prepare data for ThingSpeak
+  ThingSpeak.setField(1, lastTemperature);  // Field 1: Temperature
+  ThingSpeak.setField(2, lastHumidity);     // Field 2: Humidity
+  ThingSpeak.setField(3, TEAM_ID);          // Field 3: Team ID
+  ThingSpeak.setField(4, dataCount);        // Field 4: Data point count
+  
+  int response = ThingSpeak.writeFields(channelID, writeAPIKey);
+  
+  if (response == 200) {
+    Serial.println("✅ ThingSpeak update successful!");
+    Serial.print("Total data points: "); Serial.println(dataCount);
+  } else {
+    Serial.print("❌ ThingSpeak update failed. Error: ");
+    Serial.println(response);
+  }
+}
+
+void handleSerialCommand(String command) {
+  command.toUpperCase();
+  
+  if (command == "STATUS") {
+    printStatus();
+  } else if (command == "READ_NOW") {
+    bluetooth.println("READ_NOW");
+    Serial.println("📤 Requesting sensor reading...");
+  } else if (command == "UPLOAD_NOW") {
+    uploadToThingSpeak();
+  } else if (command == "RESTART") {
+    bluetooth.println("RESTART");
+    Serial.println("🔄 Restarting sensor node...");
+  } else {
+    // Send custom command to sensor node
+    bluetooth.println(command);
+    Serial.println("📤 Sent to sensor: " + command);
+  }
+}
+
+void printStatus() {
+  Serial.println("\n=== Gateway Status ===");
+  Serial.print("Team ID: "); Serial.println(TEAM_ID);
+  Serial.print("WiFi: "); Serial.println(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+  Serial.print("Last Temp: "); Serial.print(lastTemperature); Serial.println("°C");
+  Serial.print("Last Humidity: "); Serial.print(lastHumidity); Serial.println("%");
+  Serial.print("Data Points: "); Serial.println(dataCount);
+  Serial.print("Bluetooth: "); 
+  if (bluetooth.available()) {
+    Serial.println("Active");
+  } else {
+    Serial.println("No data");
+  }
+}
+
+void reconnectWiFi() {
+  Serial.println("Attempting WiFi reconnection...");
+  WiFi.begin(ssid, pass);
+}
