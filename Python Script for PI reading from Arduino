@@ -1,0 +1,21 @@
+import serial
+import joblib
+
+# Load ML model
+model = joblib.load('plant_health_model.pkl')
+
+# Connect to Arduino
+ser = serial.Serial('/dev/ttyUSB0', 9600)
+
+def predict_health(temp, hum, gas, soil):
+    prediction = model.predict([[temp, hum, gas, soil]])
+    return prediction[0]
+
+while True:
+    line = ser.readline().decode('utf-8').strip()
+    try:
+        temp, hum, gas, soil = map(float, line.split(','))
+        health = predict_health(temp, hum, gas, soil)
+        print(f"Temp: {temp}, Hum: {hum}, Gas: {gas}, Soil: {soil} → Health: {health}")
+    except:
+        continue
