@@ -1,0 +1,13 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('sensor_data.csv')
+print("Dataset summary:")
+print(df.describe())
+print("\nHealth status distribution:")
+print(df['health_status'].value_counts())
+
+sns.pairplot(df, hue='health_status')
+plt.suptitle("Sensor Data Distribution by Plant Health", y=1.02)
+plt.show()
