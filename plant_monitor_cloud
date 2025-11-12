@@ -1,0 +1,117 @@
+import serial
+import joblib
+import time
+import thingspeak
+import json
+from datetime import datetime
+
+print("=== Smart Plant Monitor with Cloud Integration ===")
+
+# Load configuration
+try:
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    print("✓ Configuration loaded successfully")
+except Exception as e:
+    print(f"✗ Error loading config.json: {e}")
+    exit()
+
+# Initialize ThingSpeak
+try:
+    channel = thingspeak.Channel(
+        id=config['thingspeak']['channel_id'],
+        api_key=config['thingspeak']['write_api_key']
+    )
+    print("✓ ThingSpeak channel initialized")
+except Exception as e:
+    print(f"✗ ThingSpeak error: {e}")
+    exit()
+
+# Load ML model
+try:
+    model = joblib.load('plant_health_model.pkl')
+    print("✓ ML model loaded successfully")
+except Exception as e:
+    print(f"✗ Error loading model: {e}")
+    exit()
+
+# Connect to Arduino
+try:
+    ser = serial.Serial(config['serial_port'], config['baud_rate'], timeout=1)
+    time.sleep(2)  # Wait for connection
+    print(f"✓ Connected to Arduino on {config['serial_port']}")
+except Exception as e:
+    print(f"✗ Arduino connection error: {e}")
+    exit()
+
+def predict_health(temp, hum, gas, soil):
+    """Predict plant health and return both label and numeric code"""
+    try:
+        prediction = model.predict([[temp, hum, gas, soil]])[0]
+        # Convert to numeric code for ThingSpeak
+        health_codes = {'Healthy': 1, 'Unhealthy': 0}
+        return prediction, health_codes.get(prediction, 0)
+    except Exception as e:
+        return "Error", 0
+
+def send_to_thingspeak(temp, hum, gas, soil, health_code):
+    """Send sensor data to ThingSpeak cloud"""
+    try:
+        response = channel.update({
+            'field1': temp,    # Temperature
+            'field2': hum,     # Humidity
+            'field3': gas,     # Gas Level
+            'field4': soil,    # Soil Moisture
+            'field5': health_code  # Health Status
+        })
+        return response > 0
+    except Exception as e:
+        print(f"ThingSpeak update failed: {e}")
+        return False
+
+# Main monitoring loop
+print("\n=== Starting Monitoring ===")
+print("Press Ctrl+C to stop\n")
+
+last_update_time = 0
+update_interval = config['update_interval']
+
+try:
+    while True:
+        if ser.in_waiting > 0:
+            line = ser.readline().decode('utf-8').strip()
+            
+            if line:  # Check if line is not empty
+                try:
+                    # Parse sensor data
+                    temp, hum, gas, soil = map(float, line.split(','))
+                    
+                    # Get prediction
+                    health_label, health_code = predict_health(temp, hum, gas, soil)
+                    
+                    # Display locally
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{timestamp}] Temp: {temp:.1f}°C | Humidity: {hum:.1f}% | " 
+                          f"Gas: {gas} | Soil: {soil} | Health: {health_label}")
+                    
+                    # Send to cloud (respect rate limits)
+                    current_time = time.time()
+                    if current_time - last_update_time >= update_interval:
+                        if send_to_thingspeak(temp, hum, gas, soil, health_code):
+                            print("✓ Data sent to cloud")
+                            last_update_time = current_time
+                        else:
+                            print("✗ Cloud update failed")
+                    
+                    print("-" * 50)
+                    
+                except ValueError:
+                    print("Invalid data format from Arduino")
+                except Exception as e:
+                    print(f"Processing error: {e}")
+        
+        time.sleep(2)
+
+except KeyboardInterrupt:
+    print("\n=== Monitoring stopped by user ===")
+    ser.close()
