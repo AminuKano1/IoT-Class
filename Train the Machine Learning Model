@@ -1,0 +1,28 @@
+import pandas as pd
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+import joblib
+
+# Load dataset
+df = pd.read_csv('sensor_data.csv')
+print("Dataset loaded successfully!")
+print(df.head())
+
+# Prepare features and target
+X = df[['temp', 'hum', 'gas', 'soil']]
+y = df['health_status']
+
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train model
+model = DecisionTreeClassifier()
+model.fit(X_train, y_train)
+
+# Save model
+joblib.dump(model, 'plant_health_model.pkl')
+print("Model trained and saved as 'plant_health_model.pkl'")
+
+# Test accuracy
+accuracy = model.score(X_test, y_test)
+print(f"Model accuracy: {accuracy:.2f}")
