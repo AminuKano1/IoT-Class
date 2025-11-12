@@ -1,0 +1,27 @@
+#include <DHT.h>
+
+#define DHTPIN 2
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+int gasPin = A0;
+int soilPin = A1;
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+}
+
+void loop() {
+  float temp = dht.readTemperature();
+  float hum = dht.readHumidity();
+  int gas = analogRead(gasPin);
+  int soil = analogRead(soilPin);
+
+  Serial.print(temp); Serial.print(",");
+  Serial.print(hum); Serial.print(",");
+  Serial.print(gas); Serial.print(",");
+  Serial.println(soil);
+
+  delay(2000);
+}
