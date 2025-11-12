@@ -1,0 +1,56 @@
+import serial
+import joblib
+import time
+
+# Load the trained ML model
+try:
+    model = joblib.load('plant_health_model.pkl')
+    print("ML model loaded successfully!")
+except FileNotFoundError:
+    print("Error: plant_health_model.pkl not found. Please train the model first.")
+    exit()
+
+# Connect to Arduino - USE YOUR CORRECT PORT HERE!
+try:
+    ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1)  # Change to your port
+    time.sleep(2)  # Wait for connection to establish
+    print("Connected to Arduino successfully!")
+except Exception as e:
+    print(f"Error connecting to Arduino: {e}")
+    print("Available ports: check with 'ls /dev/tty*'")
+    exit()
+
+def predict_health(temp, hum, gas, soil):
+    try:
+        prediction = model.predict([[temp, hum, gas, soil]])[0]
+        return prediction
+    except Exception as e:
+        return f"Prediction Error: {e}"
+
+print("Smart Environment Monitoring System Started...")
+print("Press Ctrl+C to stop monitoring")
+print("-" * 60)
+
+try:
+    while True:
+        if ser.in_waiting > 0:
+            line = ser.readline().decode('utf-8').strip()
+            if line:  # Check if line is not empty
+                try:
+                    temp, hum, gas, soil = map(float, line.split(','))
+                    health = predict_health(temp, hum, gas, soil)
+                    
+                    print(f"Temp: {temp}°C | Humidity: {hum}% | Gas: {gas} | Soil: {soil}")
+                    print(f"→ Plant Health: {health}")
+                    print("-" * 40)
+                    
+                except ValueError as e:
+                    print(f"Data parsing error: {e}")
+                except Exception as e:
+                    print(f"Unexpected error: {e}")
+        
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("\nMonitoring stopped by user")
+    ser.close()
