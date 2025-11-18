@@ -1,0 +1,93 @@
+# detect_image.py
+print("=== Image Object Detection ===")
+print("This program detects objects in an image")
+
+# Import our detector
+from object_detector import TFLiteObjectDetector, draw_detections
+import cv2
+import os
+
+# Check if files exist
+print("Checking files...")
+if not os.path.exists('models/detect.tflite'):
+    print("ERROR: Model file not found!")
+    print("Make sure you downloaded the model correctly")
+    exit()
+
+if not os.path.exists('models/labelmap.txt'):
+    print("ERROR: Label file not found!")
+    exit()
+
+print("All files found!")
+
+# Initialize detector
+detector = TFLiteObjectDetector('models/detect.tflite', 'models/labelmap.txt')
+
+# Get image path from user
+print("\nWhere is your image?")
+print("1. Take a picture with camera")
+print("2. Use an existing image file")
+choice = input("Enter 1 or 2: ")
+
+image_path = None
+
+if choice == '1':
+    # Take picture with camera
+    print("\nTaking picture in 3 seconds...")
+    camera = cv2.VideoCapture(0)
+    time.sleep(3)
+    
+    ret, frame = camera.read()
+    if ret:
+        image_path = 'captured_image.jpg'
+        cv2.imwrite(image_path, frame)
+        print(f"Picture saved as {image_path}")
+    else:
+        print("ERROR: Could not access camera")
+        exit()
+    camera.release()
+    
+elif choice == '2':
+    image_path = input("Enter image file path (e.g., /home/pi/Pictures/test.jpg): ")
+    if not os.path.exists(image_path):
+        print("ERROR: Image file not found!")
+        exit()
+else:
+    print("Invalid choice!")
+    exit()
+
+# Load and process image
+print(f"\nProcessing image: {image_path}")
+image = cv2.imread(image_path)
+if image is None:
+    print("ERROR: Could not load image!")
+    exit()
+
+print("Running object detection...")
+detections, inference_time = detector.detect_objects(image, min_confidence=0.5)
+
+# Show results
+print(f"\n=== RESULTS ===")
+print(f"Detection time: {inference_time*1000:.1f} milliseconds")
+print(f"Objects found: {len(detections)}")
+
+for i, obj in enumerate(detections):
+    print(f"{i+1}. {obj['class_name']} (confidence: {obj['confidence']:.2f})")
+
+# Draw results on image
+if detections:
+    result_image = draw_detections(image, detections)
+    output_path = 'detection_result.jpg'
+    cv2.imwrite(output_path, result_image)
+    print(f"\nResult saved as: {output_path}")
+else:
+    print("No objects detected!")
+    result_image = image
+
+# Show image
+cv2.imshow('Object Detection Result', result_image)
+print("\nPress any key in the image window to close...")
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+print("\nProgram finished!")
