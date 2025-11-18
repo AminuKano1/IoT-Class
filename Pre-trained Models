@@ -1,0 +1,14 @@
+# Create models directory
+mkdir models
+cd models
+
+# Download COCO SSD MobileNet model (Fastest)
+wget https://storage.googleapis.com/download.tensorflow.org/models/tflite/coco_ssd_mobilenet_v1_1.0_quant_2018_06_29.zip
+unzip coco_ssd_mobilenet_v1_1.0_quant_2018_06_29.zip
+
+# Download EfficientDet-Lite model (Better accuracy)
+wget https://tfhub.dev/tensorflow/lite-model/efficientdet/lite0/detection/metadata/1?lite-format=tflite -O efficientdet_lite0.tflite
+
+# Download labels
+wget https://raw.githubusercontent.com/tensorflow/models/master/research/object_detection/data/mscoco_label_map.pbtxt
+cd ..
