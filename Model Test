@@ -1,0 +1,31 @@
+# test_model.py
+import os
+
+print("Testing AI model setup...")
+
+# Check model file
+if os.path.exists('models/detect.tflite'):
+    print("✓ Model file found")
+else:
+    print("✗ Model file missing!")
+
+# Check label file  
+if os.path.exists('models/labelmap.txt'):
+    print("✓ Label file found")
+else:
+    print("✗ Label file missing!")
+
+# Check Python libraries
+try:
+    import tflite_runtime.interpreter as tflite
+    print("✓ TensorFlow Lite installed")
+except:
+    print("✗ TensorFlow Lite not installed")
+
+try:
+    import cv2
+    print("✓ OpenCV installed")
+except:
+    print("✗ OpenCV not installed")
+
+print("\nTest complete!")
