@@ -1,0 +1,95 @@
+# object_detector.py
+import numpy as np
+import tflite_runtime.interpreter as tflite
+import cv2
+import time
+import os
+
+class TFLiteObjectDetector:
+    def __init__(self, model_path, label_path):
+        print("Loading AI Model...")
+        
+        # Load labels
+        self.labels = []
+        with open(label_path, 'r') as f:
+            for line in f:
+                self.labels.append(line.strip().split(' ', 1)[1])
+        print(f"Loaded {len(self.labels)} object types")
+        
+        # Load model
+        self.interpreter = tflite.Interpreter(model_path=model_path, num_threads=4)
+        self.interpreter.allocate_tensors()
+        
+        # Get model information
+        self.input_details = self.interpreter.get_input_details()
+        self.output_details = self.interpreter.get_output_details()
+        
+        input_shape = self.input_details[0]['shape']
+        self.height = input_shape[1]
+        self.width = input_shape[2]
+        
+        print(f"Model loaded successfully! Input size: {self.width}x{self.height}")
+    
+    def detect_objects(self, image, min_confidence=0.5):
+        # Prepare image for the model
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image_resized = cv2.resize(image_rgb, (self.width, self.height))
+        input_data = np.expand_dims(image_resized, axis=0)
+        
+        # Run AI model
+        self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
+        start_time = time.time()
+        self.interpreter.invoke()
+        inference_time = time.time() - start_time
+        
+        # Get results
+        boxes = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
+        classes = self.interpreter.get_tensor(self.output_details[1]['index'])[0]
+        scores = self.interpreter.get_tensor(self.output_details[2]['index'])[0]
+        
+        # Process results
+        detected_objects = []
+        for i in range(len(scores)):
+            if scores[i] > min_confidence:
+                obj = {
+                    'box': boxes[i],
+                    'class_id': int(classes[i]),
+                    'class_name': self.labels[int(classes[i])],
+                    'confidence': scores[i]
+                }
+                detected_objects.append(obj)
+        
+        return detected_objects, inference_time
+
+def draw_detections(image, detections):
+    """Draw boxes and labels on image"""
+    result = image.copy()
+    h, w, _ = image.shape
+    
+    for obj in detections:
+        ymin, xmin, ymax, xmax = obj['box']
+        
+        # Convert coordinates to image size
+        xmin = int(xmin * w)
+        xmax = int(xmax * w)
+        ymin = int(ymin * h)
+        ymax = int(ymax * h)
+        
+        # Draw rectangle
+        cv2.rectangle(result, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+        
+        # Draw label
+        label = f"{obj['class_name']}: {obj['confidence']:.2f}"
+        label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+        
+        # Label background
+        cv2.rectangle(result, (xmin, ymin - label_size[1] - 10),
+                     (xmin + label_size[0], ymin), (0, 255, 0), -1)
+        
+        # Label text
+        cv2.putText(result, label, (xmin, ymin - 5),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+    
+    return result
+
+print("Object Detector class created successfully!")
